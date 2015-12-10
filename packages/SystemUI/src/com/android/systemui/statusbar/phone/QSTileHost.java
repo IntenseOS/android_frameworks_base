@@ -16,12 +16,9 @@
 
 package com.android.systemui.statusbar.phone;
 
-<<<<<<< HEAD
 import android.app.ActivityManager;
-import android.content.ComponentName;
-=======
 import android.app.PendingIntent;
->>>>>>> 888ef59df9262e1308d383fb56b8d077fb4170d7
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Resources;
@@ -39,11 +36,13 @@ import com.android.internal.logging.MetricsLogger;
 import android.widget.RemoteViews;
 import com.android.systemui.R;
 import com.android.systemui.qs.QSTile;
+import com.android.systemui.qs.tiles.AdbOverNetworkTile;
 import com.android.systemui.qs.tiles.AirplaneModeTile;
 import com.android.systemui.qs.tiles.BluetoothTile;
 import com.android.systemui.qs.tiles.CastTile;
 import com.android.systemui.qs.tiles.CellularTile;
 import com.android.systemui.qs.tiles.ColorInversionTile;
+import com.android.systemui.qs.tiles.CompassTile;
 import com.android.systemui.qs.tiles.CustomQSTile;
 import com.android.systemui.qs.tiles.DndTile;
 import com.android.systemui.qs.tiles.EditTile;
@@ -51,7 +50,10 @@ import com.android.systemui.qs.tiles.FlashlightTile;
 import com.android.systemui.qs.tiles.HotspotTile;
 import com.android.systemui.qs.tiles.IntentTile;
 import com.android.systemui.qs.tiles.LocationTile;
+import com.android.systemui.qs.tiles.NfcTile;
 import com.android.systemui.qs.tiles.RotationLockTile;
+import com.android.systemui.qs.tiles.SyncTile;
+import com.android.systemui.qs.tiles.VolumeTile;
 import com.android.systemui.qs.tiles.WifiTile;
 import com.android.systemui.statusbar.CustomTileData;
 import com.android.systemui.statusbar.policy.BluetoothController;
@@ -186,16 +188,16 @@ public class QSTileHost implements QSTile.Host, Tunable {
     }
 
     @Override
-<<<<<<< HEAD
     public void removeCustomTile(StatusBarPanelCustomTile customTile) {
         if (mCustomTileListenerService != null) {
             mCustomTileListenerService.removeCustomTile(customTile.getPackage(),
                     customTile.getTag(), customTile.getId());
         }
-=======
+    }
+
+    @Override
     public void startActivityDismissingKeyguard(PendingIntent intent) {
         mStatusBar.postStartActivityDismissingKeyguard(intent);
->>>>>>> 888ef59df9262e1308d383fb56b8d077fb4170d7
     }
 
     @Override
@@ -332,13 +334,18 @@ public class QSTileHost implements QSTile.Host, Tunable {
         else if (tileSpec.equals("cast")) return new CastTile(this);
         else if (tileSpec.equals("hotspot")) return new HotspotTile(this);
         else if (tileSpec.equals("edit")) return new EditTile(this);
+        else if (tileSpec.equals("compass")) return new CompassTile(this);
+        else if (tileSpec.equals("nfc")) return new NfcTile(this);
+        else if (tileSpec.equals("sync")) return new SyncTile(this);
+        else if (tileSpec.equals("volume_panel")) return new VolumeTile(this);
         else if (tileSpec.startsWith(IntentTile.PREFIX)) return IntentTile.create(this,tileSpec);
         else throw new IllegalArgumentException("Bad tile spec: " + tileSpec);
     }
 
     protected List<String> loadTileSpecs(String tileList) {
         final Resources res = mContext.getResources();
-        final String defaultTileList = res.getString(R.string.quick_settings_tiles_default);
+        final String defaultTileList = res.getString(org.cyanogenmod.platform.internal.
+                R.string.config_defaultQuickSettingsTiles);
         if (tileList == null) {
             tileList = res.getString(R.string.quick_settings_tiles);
             if (DEBUG) Log.d(TAG, "Loaded tile specs from config: " + tileList);
@@ -401,6 +408,11 @@ public class QSTileHost implements QSTile.Host, Tunable {
         else if (spec.equals("cast")) return R.string.quick_settings_cast_title;
         else if (spec.equals("hotspot")) return R.string.quick_settings_hotspot_label;
         else if (spec.equals("edit")) return R.string.quick_settings_edit_label;
+        else if (spec.equals("adb_network")) return R.string.qs_tile_adb_over_network;
+        else if (spec.equals("compass")) return R.string.qs_tile_compass;
+        else if (spec.equals("nfc")) return R.string.quick_settings_nfc;
+        else if (spec.equals("sync")) return R.string.quick_settings_sync_label;
+        else if (spec.equals("volume_panel")) return R.string.quick_settings_volume_panel_label;
         return 0;
     }
 
