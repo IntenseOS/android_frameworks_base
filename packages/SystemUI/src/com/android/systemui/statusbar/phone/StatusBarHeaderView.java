@@ -85,7 +85,7 @@ import cyanogenmod.providers.CMSettings;
  * The view to manage the header area in the expanded status bar.
  */
 public class StatusBarHeaderView extends RelativeLayout implements View.OnClickListener,
-        NextAlarmController.NextAlarmChangeCallback, EmergencyListener,
+        NextAlarmController.NextAlarmChangeCallback, WeatherController.Callback, EmergencyListener,
         StatusBarHeaderMachine.IStatusBarHeaderMachineObserver {
     static final String TAG = "StatusBarHeaderView";
 
