@@ -336,6 +336,7 @@ public class PackageManagerService extends IPackageManager.Stub {
     private static final boolean DEBUG_DEXOPT = false;
     private static final boolean DEBUG_ABI_SELECTION = false;
     private static final boolean DEBUG_PREBUNDLED_SCAN = false;
+    private static final boolean DEBUG_PROTECTED = false;
 
     static final boolean CLEAR_RUNTIME_PERMISSIONS_ON_UPGRADE = false;
 
@@ -461,6 +462,9 @@ public class PackageManagerService extends IPackageManager.Stub {
     private static final String COMMON_OVERLAY = ThemeUtils.COMMON_RES_TARGET;
 
     private static final long COMMON_RESOURCE_EXPIRATION = 3*60*1000; // 3 minutes
+
+    private static final String PROTECTED_APPS_TARGET_VALIDATION_COMPONENT =
+                    "com.android.settings/com.android.settings.applications.ProtectedAppsActivity";
 
     /**
      * The offset in bytes to the beginning of the hashes in an idmap
@@ -1895,7 +1899,9 @@ public class PackageManagerService extends IPackageManager.Stub {
         mContext = context;
         mFactoryTest = factoryTest;
         mOnlyCore = onlyCore;
-        mLazyDexOpt = "eng".equals(SystemProperties.get("ro.build.type"));
+        mLazyDexOpt = "eng".equals(SystemProperties.get("ro.build.type")) ||
+                ("userdebug".equals(SystemProperties.get("ro.build.type")) &&
+                SystemProperties.getBoolean("persist.sys.lazy.dexopt", false));
         mMetrics = new DisplayMetrics();
         mSettings = new Settings(mPackages);
         mSettings.addSharedUserLPw("android.uid.system", Process.SYSTEM_UID,
@@ -8265,8 +8271,12 @@ public class PackageManagerService extends IPackageManager.Stub {
         }
 
         boolean hasCommonResources = (hasCommonResources(pkg) && !COMMON_OVERLAY.equals(target));
+        PackageParser.Package targetPkg = mPackages.get(target);
+        String appPath = targetPkg != null ? targetPkg.baseCodePath : "";
+
         if (mInstaller.aapt(pkg.baseCodePath, internalPath, resPath, sharedGid, pkgId,
                 pkg.applicationInfo.targetSdkVersion,
+                appPath,
                 hasCommonResources ? ThemeUtils.getTargetCacheDir(COMMON_OVERLAY, pkg)
                         + File.separator + "resources.apk" : "") != 0) {
             throw new AaptException("Failed to run aapt");
@@ -8280,7 +8290,7 @@ public class PackageManagerService extends IPackageManager.Stub {
         if (mInstaller.aapt(pkg.baseCodePath, APK_PATH_TO_ICONS, resPath, sharedGid,
                 Resources.THEME_ICON_PKG_ID,
                 pkg.applicationInfo.targetSdkVersion,
-                "") != 0) {
+                "", "") != 0) {
             throw new AaptException("Failed to run aapt");
         }
     }
@@ -10275,8 +10285,8 @@ public class PackageManagerService extends IPackageManager.Stub {
         Bundle extras = new Bundle(1);
         extras.putInt(Intent.EXTRA_UID, UserHandle.getUid(userId, pkgSetting.appId));
 
-        sendPackageBroadcast(Intent.ACTION_PACKAGE_ADDED, null,
-                packageName, extras, null, null, new int[] {userId});
+        sendPackageBroadcast(Intent.ACTION_PACKAGE_ADDED, packageName,
+                null, extras, null, null, new int[] {userId});
         try {
             IActivityManager am = ActivityManagerNative.getDefault();
             final boolean isSystem =
@@ -15379,6 +15389,9 @@ public class PackageManagerService extends IPackageManager.Stub {
         int[] grantPermissionsUserIds = EMPTY_INT_ARRAY;
 
         synchronized (mPackages) {
+            // process applied themes so their resources are up to date and ready use
+            processAppliedThemes();
+
             // Verify that all of the preferred activity components actually
             // exist.  It is possible for applications to be updated and at
             // that point remove a previously declared activity component that
@@ -17189,6 +17202,58 @@ public class PackageManagerService extends IPackageManager.Stub {
     }
 
     @Override
+    public boolean isComponentProtected(String callingPackage,
+            ComponentName componentName, int userId) {
+        if (DEBUG_PROTECTED) Log.d(TAG, "Checking if component is protected "
+                + componentName.flattenToShortString() + " from calling package " + callingPackage);
+        enforceCrossUserPermission(Binder.getCallingUid(), userId, false, false, "set protected");
+
+        //Allow managers full access
+        List<String> protectedComponentManagers =
+                CMSettings.Secure.getDelimitedStringAsList(mContext.getContentResolver(),
+                        CMSettings.Secure.PROTECTED_COMPONENT_MANAGERS, "|");
+        if (protectedComponentManagers.contains(callingPackage)) {
+            if (DEBUG_PROTECTED) Log.d(TAG, "Calling package is a protected manager, allow");
+            return false;
+        }
+
+        String packageName = componentName.getPackageName();
+        String className = componentName.getClassName();
+
+        //If this component is launched from the same package, allow it.
+        if (TextUtils.equals(packageName, callingPackage)) {
+            if (DEBUG_PROTECTED) Log.d(TAG, "Calling package is same as target, allow");
+            return false;
+        }
+
+        if (TextUtils.equals(PROTECTED_APPS_TARGET_VALIDATION_COMPONENT,
+                componentName.flattenToString())) {
+            return false;
+        }
+
+        PackageSetting pkgSetting;
+        ArraySet<String> components;
+
+        synchronized (mPackages) {
+            pkgSetting = mSettings.mPackages.get(packageName);
+
+            if (pkgSetting == null) {
+                if (className == null) {
+                    throw new IllegalArgumentException(
+                            "Unknown package: " + packageName);
+                }
+                throw new IllegalArgumentException(
+                        "Unknown component: " + packageName
+                                + "/" + className);
+            }
+            // Get all the protected components
+            components = pkgSetting.getProtectedComponents(userId);
+            if (DEBUG_PROTECTED) Log.d(TAG, "Got " + components.size() + " protected components");
+            return components.size() > 0;
+        }
+    }
+
+    @Override
     public boolean isStorageLow() {
         final long token = Binder.clearCallingIdentity();
         try {
@@ -17692,6 +17757,44 @@ public class PackageManagerService extends IPackageManager.Stub {
                 (ThemeManager) mContext.getSystemService(Context.THEME_SERVICE);
         if (tm != null) {
             tm.processThemeResources(pkgName);
+        }
+    }
+
+    /**
+     * Makes sure resources and idmaps for themes that are applied are up to date.  This should only
+     * impact boots when something on /system has changed.
+     */
+    private void processAppliedThemes() {
+        ThemeConfig themeConfig = ThemeConfig.getBootTheme(mContext.getContentResolver());
+        if (themeConfig == null) return;
+
+        // gather up all the themes applied and then process them
+        Set<String> themesToProcess = new ArraySet<String>();
+        // process theme set for icons
+        if (themeConfig.getIconPackPkgName() != null) {
+            themesToProcess.add(themeConfig.getIconPackPkgName());
+        }
+        // process theme set for non-app specific overlays
+        if (themeConfig.getOverlayPkgName() != null) {
+            themesToProcess.add(themeConfig.getOverlayPkgName());
+        }
+        // process theme set for status bar
+        if (themeConfig.getOverlayForStatusBar() != null) {
+            themesToProcess.add(themeConfig.getOverlayForStatusBar());
+        }
+        // process theme set for navigation bar
+        if (themeConfig.getOverlayForNavBar() != null) {
+            themesToProcess.add(themeConfig.getOverlayForNavBar());
+        }
+        // process themes set for specific apps
+        Map<String, ThemeConfig.AppTheme> appThemesMap = themeConfig.getAppThemes();
+        for (String themePkgName : appThemesMap.keySet()) {
+            themesToProcess.add(themePkgName);
+        }
+
+        // now start the processing
+        for (String themePkgName : themesToProcess) {
+            processThemeResources(themePkgName);
         }
     }
 

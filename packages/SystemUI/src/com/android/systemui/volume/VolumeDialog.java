@@ -31,6 +31,7 @@ import android.content.res.ColorStateList;
 import android.content.res.Resources;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
+import android.graphics.PorterDuff;
 import android.graphics.Rect;
 import android.graphics.drawable.AnimatedVectorDrawable;
 import android.graphics.drawable.ColorDrawable;
@@ -164,7 +165,7 @@ public class VolumeDialog {
         window.setAttributes(lp);
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
 
-        mActiveSliderTint = loadColorStateList(R.color.system_accent_color);
+        mActiveSliderTint = loadColorStateList(R.color.volume_slider_active);
         mInactiveSliderTint = loadColorStateList(R.color.volume_slider_inactive);
         mDialog.setContentView(R.layout.volume_dialog);
         mDialogView = (ViewGroup) mDialog.findViewById(R.id.volume_dialog);
@@ -363,6 +364,8 @@ public class VolumeDialog {
         row.header = (TextView) row.view.findViewById(R.id.volume_row_header);
         mSpTexts.add(row.header);
         row.slider = (SeekBar) row.view.findViewById(R.id.volume_row_slider);
+        row.slider.setProgressTintMode(PorterDuff.Mode.SRC_ATOP);
+        row.slider.setThumbTintMode(PorterDuff.Mode.SRC_ATOP);
         row.slider.setOnSeekBarChangeListener(new VolumeSeekBarChangeListener(row));
 
         // forward events above the slider into the slider
@@ -956,6 +959,12 @@ public class VolumeDialog {
         }
     };
 
+    public void cleanup() {
+        mController.removeCallback(mControllerCallbackH);
+        mZenFooter.cleanup();
+        mAccessibility.cleanup();
+    }
+
     private final class H extends Handler {
         private static final int SHOW = 1;
         private static final int DISMISS = 2;
@@ -1078,26 +1087,7 @@ public class VolumeDialog {
 
         public void init() {
             mMgr = (AccessibilityManager) mContext.getSystemService(Context.ACCESSIBILITY_SERVICE);
-            mDialogView.addOnAttachStateChangeListener(new OnAttachStateChangeListener() {
-                @Override
-                public void onViewDetachedFromWindow(View v) {
-                    if (D.BUG) Log.d(TAG, "onViewDetachedFromWindow");
-                    // noop
-                }
-
-                @Override
-                public void onViewAttachedToWindow(View v) {
-                    if (D.BUG) Log.d(TAG, "onViewAttachedToWindow");
-                    updateFeedbackEnabled();
-                }
-            });
-            mDialogView.setAccessibilityDelegate(this);
-            mMgr.addAccessibilityStateChangeListener(new AccessibilityStateChangeListener() {
-                @Override
-                public void onAccessibilityStateChanged(boolean enabled) {
-                    updateFeedbackEnabled();
-                }
-            });
+            mDialogView.addOnAttachStateChangeListener(mOnAttachStateChangeListener);
             updateFeedbackEnabled();
         }
 
@@ -1106,6 +1096,10 @@ public class VolumeDialog {
                                                        AccessibilityEvent event) {
             rescheduleTimeoutH();
             return super.onRequestSendAccessibilityEvent(host, child, event);
+        }
+
+        public void cleanup() {
+            mDialogView.removeOnAttachStateChangeListener(mOnAttachStateChangeListener);
         }
 
         private void updateFeedbackEnabled() {
@@ -1123,6 +1117,21 @@ public class VolumeDialog {
             }
             return false;
         }
+
+        private OnAttachStateChangeListener mOnAttachStateChangeListener =
+                new OnAttachStateChangeListener() {
+            @Override
+            public void onViewDetachedFromWindow(View v) {
+                if (D.BUG) Log.d(TAG, "onViewDetachedFromWindow");
+                // noop
+            }
+
+            @Override
+            public void onViewAttachedToWindow(View v) {
+                if (D.BUG) Log.d(TAG, "onViewAttachedToWindow");
+                updateFeedbackEnabled();
+            }
+        };
     }
 
     private static class VolumeRow {

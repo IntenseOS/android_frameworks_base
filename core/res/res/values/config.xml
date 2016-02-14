@@ -1061,6 +1061,7 @@
          when adapting to brighter or darker environments.  This parameter controls how quickly
          brightness changes occur in response to an observed change in light level that exceeds the
          hysteresis threshold. -->
+    <integer name="config_autoBrightnessBrighteningLightFastDebounce">500</integer>
     <integer name="config_autoBrightnessBrighteningLightDebounce">4000</integer>
     <integer name="config_autoBrightnessDarkeningLightDebounce">8000</integer>
 
@@ -2392,6 +2393,10 @@
     <!-- Keyguard component -->
     <string name="config_keyguardComponent" translatable="false">com.android.systemui/com.android.systemui.keyguard.KeyguardService</string>
 
+    <!-- Set to true to disallow 3rd party apps access to the fingerprint reader, for older
+         hardware compatibility. This also disables fingerprints for secondary users. -->
+    <bool name="config_fingerprintRestrictedToSystemAndOwner">false</bool>
+
     <!-- For performance and storage reasons, limit the number of fingerprints per user -->
     <integer name="config_fingerprintMaxTemplatesPerUser">5</integer>
 
@@ -2519,4 +2524,7 @@
          automatically try to pair with it when the device exits tablet mode. -->
     <string translatable="false" name="config_packagedKeyboardName"></string>
     <integer name="config_dayColorTemperature">6500</integer>
+
+    <!-- Show battery fully charged notification -->
+    <bool name="config_showBatteryFullyChargedNotification">false</bool>
 </resources>

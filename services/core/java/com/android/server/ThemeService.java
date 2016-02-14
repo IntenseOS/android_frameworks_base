@@ -96,7 +96,8 @@ public class ThemeService extends IThemeService.Stub {
     private static final boolean DEBUG = false;
 
     private static final String GOOGLE_SETUPWIZARD_PACKAGE = "com.google.android.setupwizard";
-    private static final String CM_SETUPWIZARD_PACKAGE = "com.cyanogenmod.account";
+    private static final String CM_SETUPWIZARD_PACKAGE = "com.cyanogenmod.setupwizard";
+    private static final String MANAGED_PROVISIONING_PACKAGE = "com.android.managedprovisioning";
 
     private static final long MAX_ICON_CACHE_SIZE = 33554432L; // 32MB
     private static final long PURGED_ICON_CACHE_SIZE = 25165824L; // 24 MB
@@ -452,8 +453,8 @@ public class ThemeService extends IThemeService.Stub {
 
     private void doApplyDefaultTheme() {
         final ContentResolver resolver = mContext.getContentResolver();
-        final String defaultThemePkg = Settings.Secure.getString(resolver,
-                Settings.Secure.DEFAULT_THEME_PACKAGE);
+        final String defaultThemePkg = CMSettings.Secure.getString(resolver,
+                CMSettings.Secure.DEFAULT_THEME_PACKAGE);
         if (!TextUtils.isEmpty(defaultThemePkg)) {
             String defaultThemeComponents = CMSettings.Secure.getString(resolver,
                     CMSettings.Secure.DEFAULT_THEME_COMPONENTS);
@@ -859,6 +860,7 @@ public class ThemeService extends IThemeService.Stub {
 
     private boolean isSetupActivity(ResolveInfo info) {
         return GOOGLE_SETUPWIZARD_PACKAGE.equals(info.activityInfo.packageName) ||
+               MANAGED_PROVISIONING_PACKAGE.equals(info.activityInfo.packageName) ||
                CM_SETUPWIZARD_PACKAGE.equals(info.activityInfo.packageName);
     }
 
@@ -1186,7 +1188,7 @@ public class ThemeService extends IThemeService.Stub {
     };
 
     private void processInstalledThemes() {
-        final String defaultTheme = ThemeUtils.getDefaultThemePackageName(mContext);
+        final String defaultTheme = getDefaultThemePackageName(mContext);
         Message msg;
         // Make sure the default theme is the first to get processed!
         if (!ThemeConfig.SYSTEM_DEFAULT.equals(defaultTheme)) {
@@ -1244,5 +1246,32 @@ public class ThemeService extends IThemeService.Stub {
         }
 
         return null;
+    }
+
+    /**
+     * Get the default theme package name
+     * Historically this was done using {@link ThemeUtils#getDefaultThemePackageName(Context)} but
+     * the setting that is queried in that method uses the AOSP settings provider but the setting
+     * is now in CMSettings.  Since {@link ThemeUtils} is in the core framework we cannot access
+     * CMSettings.
+     * @param context
+     * @return Default theme package name
+     */
+    private static String getDefaultThemePackageName(Context context) {
+        final String defaultThemePkg = CMSettings.Secure.getString(context.getContentResolver(),
+                CMSettings.Secure.DEFAULT_THEME_PACKAGE);
+        if (!TextUtils.isEmpty(defaultThemePkg)) {
+            PackageManager pm = context.getPackageManager();
+            try {
+                if (pm.getPackageInfo(defaultThemePkg, 0) != null) {
+                    return defaultThemePkg;
+                }
+            } catch (PackageManager.NameNotFoundException e) {
+                // doesn't exist so system will be default
+                Log.w(TAG, "Default theme " + defaultThemePkg + " not found", e);
+            }
+        }
+
+        return SYSTEM_DEFAULT;
     }
 }
